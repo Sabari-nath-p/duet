@@ -21,7 +21,7 @@ async function bootstrap() {
         forbidNonWhitelisted: true,
         transform: true,
     }));
-    app.setGlobalPrefix('api/v1');
+    app.setGlobalPrefix('v1');
     const config = new swagger_1.DocumentBuilder()
         .setTitle('ScheduRemind API')
         .setDescription('SAAS Platform for Notification and Payment Management')
