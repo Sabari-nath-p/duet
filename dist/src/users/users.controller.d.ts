@@ -83,8 +83,8 @@ export declare class UsersController {
         } & {
             id: string;
             userId: string;
-            customFieldDefinitionId: string;
             value: string;
+            customFieldDefinitionId: string;
         })[];
         id: string;
         email: string;
@@ -152,8 +152,8 @@ export declare class UsersController {
         } & {
             id: string;
             userId: string;
-            customFieldDefinitionId: string;
             value: string;
+            customFieldDefinitionId: string;
         })[];
         id: string;
         email: string;
