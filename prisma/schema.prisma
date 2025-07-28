@@ -1,0 +1,410 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum UserRole {
+  SUPER_ADMIN
+  CLIENT
+  CLIENT_USER
+}
+
+enum NotificationChannel {
+  WHATSAPP
+  EMAIL
+  BOTH
+}
+
+enum PaymentProvider {
+  RAZORPAY
+  STRIPE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+enum RecurringInterval {
+  MINUTES
+  HOURS
+  DAYS
+  WEEKS
+  MONTHS
+}
+
+enum NotificationStatus {
+  SENT
+  DELIVERED
+  FAILED
+  PENDING
+}
+
+// Models
+model User {
+  id        String   @id @default(cuid())
+  email     String
+  password  String?
+  name      String
+  phone     String?
+  role      UserRole
+  isActive  Boolean  @default(true)
+  clientId  String?
+  billingStartDate DateTime? // When the user's billing cycle starts
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  client              Client?               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdClients      Client[]              @relation("CreatedBy")
+  templates           Template[]
+  userSubscriptions   UserSubscription[]
+  payments            Payment[]
+  notifications       Notification[]
+  notificationLogs    NotificationLog[]
+  customFields        UserCustomField[]
+
+  @@unique([email, clientId]) // Allow same email for different clients
+  @@index([clientId])
+  @@index([email])
+  @@map("users")
+}
+
+model Client {
+  id          String   @id @default(cuid())
+  name        String
+  email       String   @unique
+  phone       String?
+  description String?
+  isActive    Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // API Keys and Configuration
+  whatsappConfig    WhatsappConfig?
+  emailConfig       EmailConfig?
+  paymentConfigs    PaymentConfig[]
+
+  // Relations
+  createdBy         User                @relation("CreatedBy", fields: [createdById], references: [id])
+  users             User[]
+  templates         Template[]
+  userSubscriptions UserSubscription[]
+  payments          Payment[]
+  notifications     Notification[]
+  notificationLogs  NotificationLog[]
+  customFieldDefs   CustomFieldDefinition[]
+  webhookEndpoints  WebhookEndpoint[]
+
+  @@index([createdById])
+  @@map("clients")
+}
+
+model WhatsappConfig {
+  id            String  @id @default(cuid())
+  clientId      String  @unique
+  businessApiKey String
+  phoneNumberId String
+  accessToken   String
+  webhookSecret String?
+  isActive      Boolean @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_configs")
+}
+
+model EmailConfig {
+  id          String  @id @default(cuid())
+  clientId    String  @unique
+  smtpHost    String
+  smtpPort    Int
+  smtpUser    String
+  smtpPassword String
+  fromEmail   String
+  fromName    String
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("email_configs")
+}
+
+model PaymentConfig {
+  id           String          @id @default(cuid())
+  clientId     String
+  provider     PaymentProvider
+  publicKey    String
+  secretKey    String
+  webhookSecret String
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  // Relations
+  client   Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  payments Payment[]
+
+  @@unique([clientId, provider])
+  @@index([clientId])
+  @@map("payment_configs")
+}
+
+model Template {
+  id                String              @id @default(cuid())
+  title             String
+  body              String
+  amount            Decimal             @db.Decimal(10, 2)
+  recurringValue    Int
+  recurringInterval RecurringInterval
+  notificationChannel NotificationChannel
+  paymentProvider   PaymentProvider
+  isActive          Boolean             @default(true)
+  clientId          String
+  createdBy         String
+  
+  // Payment Reminder Options
+  enablePaymentReminders     Boolean @default(true)   // Whether to send payment reminders
+  includePaymentLink         Boolean @default(true)   // Whether to include payment links in reminders
+  reminderDaysBefore         Int[]   @default([7, 3, 1]) // Days before due date to send reminders
+  enableOverdueReminders     Boolean @default(true)   // Whether to send overdue reminders
+  overdueReminderDays        Int[]   @default([1, 3, 7]) // Days after due date to send overdue reminders
+  
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  // Relations
+  client            Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  creator           User                @relation(fields: [createdBy], references: [id])
+  userSubscriptions UserSubscription[]
+  notifications     Notification[]
+
+  @@index([clientId])
+  @@index([createdBy])
+  @@map("templates")
+}
+
+model UserSubscription {
+  id             String   @id @default(cuid())
+  userId         String
+  templateId     String?
+  clientId       String
+  title          String
+  body           String
+  amount         Decimal  @db.Decimal(10, 2)
+  recurringValue Int
+  recurringInterval RecurringInterval
+  notificationChannel NotificationChannel
+  paymentProvider PaymentProvider
+  nextPaymentDate DateTime
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template Template? @relation(fields: [templateId], references: [id])
+  client   Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  payments Payment[]
+  notifications Notification[]
+
+  @@index([userId])
+  @@index([templateId])
+  @@index([clientId])
+  @@index([nextPaymentDate])
+  @@map("user_subscriptions")
+}
+
+model Payment {
+  id                 String            @id @default(cuid())
+  userId             String
+  clientId           String
+  userSubscriptionId String
+  paymentConfigId    String
+  amount             Decimal           @db.Decimal(10, 2)
+  currency           String            @default("INR")
+  description        String?
+  status             PaymentStatus     @default(PENDING)
+  provider           PaymentProvider   // Fixed the field name
+  providerPaymentId  String?
+  externalPaymentId  String?           // For payment links
+  paymentLink        String?
+  dueDate            DateTime?
+  expiresAt          DateTime?
+  paidAt             DateTime?
+  failureReason      String?
+  gatewayResponse    Json?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  // Relations
+  user             User             @relation(fields: [userId], references: [id])
+  client           Client           @relation(fields: [clientId], references: [id])
+  userSubscription UserSubscription @relation(fields: [userSubscriptionId], references: [id])
+  paymentConfig    PaymentConfig    @relation(fields: [paymentConfigId], references: [id])
+  notifications    Notification[]
+  notificationLogs NotificationLog[]
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([userSubscriptionId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+model Notification {
+  id                  String             @id @default(cuid())
+  userId              String
+  clientId            String
+  userSubscriptionId  String?            // Optional for general reminders
+  templateId          String?
+  paymentId           String?
+  channel             NotificationChannel
+  recipient           String
+  subject             String?
+  message             String
+  templateVariables   Json?
+  status              NotificationStatus
+  providerId          String?
+  providerResponse    Json?
+  errorMessage        String?
+  sentAt              DateTime?
+  deliveredAt         DateTime?
+  createdAt           DateTime           @default(now())
+
+  // Relations
+  user             User             @relation(fields: [userId], references: [id])
+  client           Client           @relation(fields: [clientId], references: [id])
+  userSubscription UserSubscription? @relation(fields: [userSubscriptionId], references: [id])
+  template         Template?        @relation(fields: [templateId], references: [id])
+  payment          Payment?         @relation(fields: [paymentId], references: [id])
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([userSubscriptionId])
+  @@index([templateId])
+  @@index([paymentId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model NotificationLog {
+  id                  String             @id @default(cuid())
+  userId              String
+  clientId            String
+  paymentId           String?
+  channel             NotificationChannel
+  recipient           String
+  subject             String?
+  message             String
+  status              NotificationStatus
+  providerId          String?
+  errorMessage        String?
+  sentAt              DateTime?
+  deliveredAt         DateTime?
+  createdAt           DateTime           @default(now())
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id])
+  client  Client   @relation(fields: [clientId], references: [id])
+  payment Payment? @relation(fields: [paymentId], references: [id])
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([paymentId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notification_logs")
+}
+
+model CustomFieldDefinition {
+  id          String   @id @default(cuid())
+  clientId    String
+  fieldName   String
+  fieldType   String   // text, number, email, phone, date, etc.
+  isRequired  Boolean  @default(false)
+  options     Json?    // For dropdown/select fields
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  client     Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userValues UserCustomField[]
+
+  @@unique([clientId, fieldName])
+  @@index([clientId])
+  @@map("custom_field_definitions")
+}
+
+model UserCustomField {
+  id                      String @id @default(cuid())
+  userId                  String
+  customFieldDefinitionId String
+  value                   String
+
+  // Relations
+  user                  User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customFieldDefinition CustomFieldDefinition @relation(fields: [customFieldDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, customFieldDefinitionId])
+  @@index([userId])
+  @@map("user_custom_fields")
+}
+
+model WebhookEndpoint {
+  id        String   @id @default(cuid())
+  clientId  String
+  provider  PaymentProvider
+  endpoint  String
+  secret    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  logs   WebhookLog[]
+
+  @@unique([clientId, provider])
+  @@index([clientId])
+  @@map("webhook_endpoints")
+}
+
+model WebhookLog {
+  id              String   @id @default(cuid())
+  webhookEndpointId String
+  provider        PaymentProvider
+  eventType       String
+  payload         Json
+  signature       String?
+  processed       Boolean  @default(false)
+  error           String?
+  createdAt       DateTime @default(now())
+
+  // Relations
+  webhookEndpoint WebhookEndpoint @relation(fields: [webhookEndpointId], references: [id])
+
+  @@index([webhookEndpointId])
+  @@index([createdAt])
+  @@map("webhook_logs")
+}
