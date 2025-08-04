@@ -3,6 +3,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsService } from '../payments/payments.service';
+import { NotificationChannel } from '../notifications/dto/notification.dto';
+import { PaymentStatus } from '../payments/dto/payment.dto';
 
 @Injectable()
 export class CronService {
@@ -49,15 +51,23 @@ export class CronService {
 
         // Check if payment reminders are enabled for this template
         if (!template.enablePaymentReminders) {
-          this.logger.debug(`Payment reminders disabled for template ${template.id}, skipping payment ${payment.id}`);
+          this.logger.debug(
+            `Payment reminders disabled for template ${template.id}, skipping payment ${payment.id}`,
+          );
           continue;
         }
 
-        const daysUntilDue = payment.dueDate ? 
-          Math.ceil((payment.dueDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : 0;
+        const daysUntilDue = payment.dueDate
+          ? Math.ceil(
+              (payment.dueDate.getTime() - new Date().getTime()) /
+                (1000 * 60 * 60 * 24),
+            )
+          : 0;
 
         // Check if we should send a reminder for this number of days
-        const shouldSendReminder = template.reminderDaysBefore.includes(daysUntilDue) || daysUntilDue === 0;
+        const shouldSendReminder =
+          template.reminderDaysBefore.includes(daysUntilDue) ||
+          daysUntilDue === 0;
 
         if (!shouldSendReminder) {
           continue;
@@ -65,9 +75,9 @@ export class CronService {
 
         // Generate reminder message based on template settings
         let reminderMessage = this.generateReminderMessage(
-          payment, 
-          template, 
-          daysUntilDue
+          payment,
+          template,
+          daysUntilDue,
         );
 
         if (reminderMessage) {
@@ -75,14 +85,16 @@ export class CronService {
             {
               userId: payment.userId,
               userSubscriptionId: payment.userSubscriptionId,
-              channel: template.notificationChannel as any,
+              channel: template.notificationChannel as NotificationChannel,
               message: reminderMessage,
               subject: `Payment Reminder - ${template.title}`,
               templateVariables: {
                 amount: payment.amount,
                 currency: payment.currency,
                 due_date: payment.dueDate?.toLocaleDateString() || 'N/A',
-                payment_link: template.includePaymentLink ? payment.paymentLink : '',
+                payment_link: template.includePaymentLink
+                  ? payment.paymentLink
+                  : '',
                 days_until_due: daysUntilDue.toString(),
                 template_title: template.title,
               },
@@ -96,7 +108,9 @@ export class CronService {
         }
       }
 
-      this.logger.debug(`Processed ${upcomingPayments.length} upcoming payments`);
+      this.logger.debug(
+        `Processed ${upcomingPayments.length} upcoming payments`,
+      );
     } catch (error) {
       this.logger.error('Error in daily payment reminders:', error);
     }
@@ -132,36 +146,49 @@ export class CronService {
 
         // Check if overdue reminders are enabled for this template
         if (!template.enableOverdueReminders) {
-          this.logger.debug(`Overdue reminders disabled for template ${template.id}, skipping payment ${payment.id}`);
+          this.logger.debug(
+            `Overdue reminders disabled for template ${template.id}, skipping payment ${payment.id}`,
+          );
           continue;
         }
 
-        const daysOverdue = payment.dueDate ? 
-          Math.floor((new Date().getTime() - payment.dueDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+        const daysOverdue = payment.dueDate
+          ? Math.floor(
+              (new Date().getTime() - payment.dueDate.getTime()) /
+                (1000 * 60 * 60 * 24),
+            )
+          : 0;
 
         // Check if we should send an overdue reminder for this number of days
-        const shouldSendReminder = template.overdueReminderDays.includes(daysOverdue);
+        const shouldSendReminder =
+          template.overdueReminderDays.includes(daysOverdue);
 
         if (!shouldSendReminder) {
           continue;
         }
 
         // Generate overdue reminder message
-        const reminderMessage = this.generateOverdueMessage(payment, template, daysOverdue);
+        const reminderMessage = this.generateOverdueMessage(
+          payment,
+          template,
+          daysOverdue,
+        );
 
         if (reminderMessage) {
           await this.notificationsService.create(
             {
               userId: payment.userId,
               userSubscriptionId: payment.userSubscriptionId,
-              channel: template.notificationChannel as any,
+              channel: template.notificationChannel as NotificationChannel,
               message: reminderMessage,
               subject: `OVERDUE PAYMENT - ${template.title}`,
               templateVariables: {
                 amount: payment.amount,
                 currency: payment.currency,
                 due_date: payment.dueDate?.toLocaleDateString() || 'N/A',
-                payment_link: template.includePaymentLink ? payment.paymentLink : '',
+                payment_link: template.includePaymentLink
+                  ? payment.paymentLink
+                  : '',
                 days_overdue: daysOverdue.toString(),
                 template_title: template.title,
               },
@@ -192,12 +219,7 @@ export class CronService {
         where: {
           isActive: true,
           template: {
-            recurringInterval: {
-              not: null,
-            } as any,
-            recurringValue: {
-              not: null,
-            } as any,
+            isActive: true,
           },
         },
         include: {
@@ -214,7 +236,7 @@ export class CronService {
 
       for (const subscription of activeSubscriptions) {
         const lastPayment = subscription.payments?.[0];
-        
+
         if (!lastPayment) {
           // Create first payment if none exists
           await this.createRecurringPayment(subscription);
@@ -232,7 +254,9 @@ export class CronService {
         );
 
         const now = new Date();
-        const daysDifference = Math.ceil((nextDueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const daysDifference = Math.ceil(
+          (nextDueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+        );
 
         // Create payment 30 days before due date
         if (daysDifference <= 30) {
@@ -249,7 +273,9 @@ export class CronService {
         }
       }
 
-      this.logger.debug(`Processed ${activeSubscriptions.length} active subscriptions`);
+      this.logger.debug(
+        `Processed ${activeSubscriptions.length} active subscriptions`,
+      );
     } catch (error) {
       this.logger.error('Error in recurring payments:', error);
     }
@@ -263,7 +289,7 @@ export class CronService {
     try {
       // Delete notifications older than 30 days
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      
+
       const deleteResult = await this.prisma.notification.deleteMany({
         where: {
           createdAt: {
@@ -286,11 +312,13 @@ export class CronService {
           },
         },
         data: {
-          status: 'FAILED' as any,
+          status: PaymentStatus.FAILED,
         },
       });
 
-      this.logger.log(`Marked ${overduePayments.count} overdue payments as failed`);
+      this.logger.log(
+        `Marked ${overduePayments.count} overdue payments as failed`,
+      );
     } catch (error) {
       this.logger.error('Error in weekly cleanup:', error);
     }
@@ -317,13 +345,22 @@ export class CronService {
       });
 
       for (const client of clients) {
-        const analytics = await this.generateClientMonthlyAnalytics(client.id, lastMonth, thisMonth);
-        
+        const analytics = await this.generateClientMonthlyAnalytics(
+          client.id,
+          lastMonth,
+          thisMonth,
+        );
+
         // Store analytics in database or send report
-        this.logger.log(`Generated monthly analytics for client ${client.name}:`, analytics);
+        this.logger.log(
+          `Generated monthly analytics for client ${client.name}:`,
+          analytics,
+        );
       }
 
-      this.logger.debug(`Generated monthly analytics for ${clients.length} clients`);
+      this.logger.debug(
+        `Generated monthly analytics for ${clients.length} clients`,
+      );
     } catch (error) {
       this.logger.error('Error in monthly analytics generation:', error);
     }
@@ -332,28 +369,53 @@ export class CronService {
   private async createRecurringPayment(subscription: any, dueDate?: Date) {
     // Use user's billing start date if available, otherwise use current date
     const billingStartDate = subscription.user.billingStartDate || new Date();
-    
-    const nextDueDate = dueDate || this.calculateNextDueDateFromBillingStart(
-      billingStartDate,
-      subscription.template.recurringInterval,
-      subscription.template.recurringValue,
-    );
 
-    await this.paymentsService.create(
-      {
-        userSubscriptionId: subscription.id,
-        amount: subscription.template.amount,
-        currency: 'INR',
+    const nextDueDate =
+      dueDate ||
+      this.calculateNextDueDateFromBillingStart(
+        billingStartDate,
+        subscription.template.recurringInterval,
+        subscription.template.recurringValue,
+      );
+
+    // Verify that the client has a payment configuration for the required provider
+    const paymentConfig = await this.prisma.paymentConfig.findFirst({
+      where: {
+        clientId: subscription.template.clientId,
         provider: subscription.template.paymentProvider,
-        dueDate: nextDueDate.toISOString(),
-        description: `Recurring payment for ${subscription.template.title}`,
+        isActive: true,
       },
-      { id: 'system', role: 'SUPER_ADMIN' }, // System user
-    );
+    });
 
-    this.logger.log(
-      `Created recurring payment for user ${subscription.user.email}, due: ${nextDueDate.toLocaleDateString()} (based on billing start: ${billingStartDate.toLocaleDateString()})`,
-    );
+    if (!paymentConfig) {
+      this.logger.error(
+        `No active payment configuration found for client ${subscription.template.clientId} with provider ${subscription.template.paymentProvider}. Skipping payment creation for subscription ${subscription.id}`,
+      );
+      return;
+    }
+
+    try {
+      await this.paymentsService.create(
+        {
+          userSubscriptionId: subscription.id,
+          amount: subscription.template.amount,
+          currency: 'INR',
+          provider: subscription.template.paymentProvider,
+          dueDate: nextDueDate.toISOString(),
+          description: `Recurring payment for ${subscription.template.title}`,
+        },
+        { id: 'system', role: 'SUPER_ADMIN' }, // System user
+      );
+
+      this.logger.log(
+        `Created recurring payment for user ${subscription.user.email}, due: ${nextDueDate.toLocaleDateString()} (based on billing start: ${billingStartDate.toLocaleDateString()})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to create recurring payment for subscription ${subscription.id}:`,
+        error,
+      );
+    }
   }
 
   private calculateNextDueDate(
@@ -364,17 +426,20 @@ export class CronService {
     const nextDate = new Date(lastDueDate);
 
     switch (recurringInterval) {
-      case 'DAILY':
+      case 'MINUTES':
+        nextDate.setMinutes(nextDate.getMinutes() + recurringValue);
+        break;
+      case 'HOURS':
+        nextDate.setHours(nextDate.getHours() + recurringValue);
+        break;
+      case 'DAYS':
         nextDate.setDate(nextDate.getDate() + recurringValue);
         break;
-      case 'WEEKLY':
-        nextDate.setDate(nextDate.getDate() + (recurringValue * 7));
+      case 'WEEKS':
+        nextDate.setDate(nextDate.getDate() + recurringValue * 7);
         break;
-      case 'MONTHLY':
+      case 'MONTHS':
         nextDate.setMonth(nextDate.getMonth() + recurringValue);
-        break;
-      case 'YEARLY':
-        nextDate.setFullYear(nextDate.getFullYear() + recurringValue);
         break;
       default:
         nextDate.setMonth(nextDate.getMonth() + 1); // Default to monthly
@@ -391,16 +456,16 @@ export class CronService {
     billingStartDate: Date,
     recurringInterval: string,
     recurringValue: number,
-    currentDate = new Date()
+    currentDate = new Date(),
   ): Date {
     const startDate = new Date(billingStartDate);
     const nextPaymentDate = new Date(startDate);
 
     // Calculate how many billing cycles have passed since the start date
     const timeDiff = currentDate.getTime() - startDate.getTime();
-    
+
     let intervalInMilliseconds: number;
-    
+
     switch (recurringInterval) {
       case 'MINUTES':
         intervalInMilliseconds = recurringValue * 60 * 1000;
@@ -416,32 +481,28 @@ export class CronService {
         break;
       case 'MONTHS':
         // For months, we need to handle differently due to varying month lengths
-        const monthsToAdd = Math.floor(timeDiff / (30 * 24 * 60 * 60 * 1000 * recurringValue)) * recurringValue;
+        const monthsToAdd =
+          Math.floor(timeDiff / (30 * 24 * 60 * 60 * 1000 * recurringValue)) *
+          recurringValue;
         nextPaymentDate.setMonth(nextPaymentDate.getMonth() + monthsToAdd);
-        
+
         // Find the next payment date
         while (nextPaymentDate <= currentDate) {
           nextPaymentDate.setMonth(nextPaymentDate.getMonth() + recurringValue);
         }
         return nextPaymentDate;
-      case 'YEARLY':
-        const yearsToAdd = Math.floor(timeDiff / (365 * 24 * 60 * 60 * 1000 * recurringValue)) * recurringValue;
-        nextPaymentDate.setFullYear(nextPaymentDate.getFullYear() + yearsToAdd);
-        
-        // Find the next payment date
-        while (nextPaymentDate <= currentDate) {
-          nextPaymentDate.setFullYear(nextPaymentDate.getFullYear() + recurringValue);
-        }
-        return nextPaymentDate;
+
       default:
         throw new Error(`Unsupported recurring interval: ${recurringInterval}`);
     }
 
     // Calculate how many complete cycles have passed
     const cyclesPassed = Math.floor(timeDiff / intervalInMilliseconds);
-    
+
     // Add cycles to get the next payment date
-    nextPaymentDate.setTime(startDate.getTime() + ((cyclesPassed + 1) * intervalInMilliseconds));
+    nextPaymentDate.setTime(
+      startDate.getTime() + (cyclesPassed + 1) * intervalInMilliseconds,
+    );
 
     return nextPaymentDate;
   }
@@ -492,7 +553,13 @@ export class CronService {
       }),
     ]);
 
-    const [totalPayments, successfulPayments, revenue, totalNotifications, activeSubscriptions] = analytics;
+    const [
+      totalPayments,
+      successfulPayments,
+      revenue,
+      totalNotifications,
+      activeSubscriptions,
+    ] = analytics;
 
     return {
       period: {
@@ -502,7 +569,8 @@ export class CronService {
       payments: {
         total: totalPayments,
         successful: successfulPayments,
-        successRate: totalPayments > 0 ? (successfulPayments / totalPayments) * 100 : 0,
+        successRate:
+          totalPayments > 0 ? (successfulPayments / totalPayments) * 100 : 0,
       },
       revenue: revenue._sum.amount || 0,
       notifications: totalNotifications,
@@ -513,11 +581,16 @@ export class CronService {
   /**
    * Generate reminder message based on template settings
    */
-  private generateReminderMessage(payment: any, template: any, daysUntilDue: number): string {
+  private generateReminderMessage(
+    payment: any,
+    template: any,
+    daysUntilDue: number,
+  ): string {
     const amount = `${payment.currency} ${payment.amount}`;
-    const paymentLinkText = template.includePaymentLink && payment.paymentLink 
-      ? ` Please complete your payment: ${payment.paymentLink}` 
-      : '';
+    const paymentLinkText =
+      template.includePaymentLink && payment.paymentLink
+        ? ` Please complete your payment: ${payment.paymentLink}`
+        : '';
 
     if (daysUntilDue === 0) {
       return `Payment Due Today: Your payment of ${amount} is due today.${paymentLinkText}`;
@@ -535,11 +608,16 @@ export class CronService {
   /**
    * Generate overdue reminder message
    */
-  private generateOverdueMessage(payment: any, template: any, daysOverdue: number): string {
+  private generateOverdueMessage(
+    payment: any,
+    template: any,
+    daysOverdue: number,
+  ): string {
     const amount = `${payment.currency} ${payment.amount}`;
-    const paymentLinkText = template.includePaymentLink && payment.paymentLink 
-      ? ` Please complete your payment immediately: ${payment.paymentLink}` 
-      : '';
+    const paymentLinkText =
+      template.includePaymentLink && payment.paymentLink
+        ? ` Please complete your payment immediately: ${payment.paymentLink}`
+        : '';
 
     if (daysOverdue === 1) {
       return `OVERDUE: Your payment of ${amount} was due yesterday.${paymentLinkText}`;
